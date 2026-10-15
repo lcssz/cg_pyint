@@ -1,15 +1,13 @@
-"""Canvas: desenha pixel a pixel sobre uma pygame.Surface.
+"""Canvas: desenha pixel a pixel sobre um buffer de memória RGBA (framebuffer CPU).
 
 Equivalente a src/canvas.zig. Todos os algoritmos (Bresenham para retas,
-ponto médio para círculos, flood fill) são implementados à mão; o pygame
-só é usado para ler/escrever pixels individuais.
+ponto médio para círculos, flood fill) são implementados à mão; o buffer
+é mantido diretamente em memória e transferido para exibição via OpenGL/GLFW.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-
-import pygame
 
 
 @dataclass(frozen=True)
@@ -17,7 +15,7 @@ class Point:
     x: int
     y: int
 
-    def offset(self, dx: int, dy: int) -> "Point":
+    def offset(self, dx: int, dy: int) -> Point:
         return Point(self.x + dx, self.y + dy)
 
 
@@ -25,14 +23,16 @@ Color = tuple[int, int, int, int]  # (r, g, b, a)
 
 
 class Canvas:
-    def __init__(self, surface: pygame.Surface) -> None:
-        self.surface = surface
+    def __init__(self, width: int, height: int) -> None:
+        self.width = width
+        self.height = height
+        self.buffer = bytearray(width * height * 4)
         self.draw_color: Color = (0, 0, 0, 255)
         self.is_drawing = False
         self.last_point: Point | None = None
 
     def clear(self, color: Color) -> None:
-        self.surface.fill(color)
+        self.buffer[:] = bytes(color) * (self.width * self.height)
 
     # ------------------------------------------------------------------
     # Traço livre (modo FREE)
@@ -96,13 +96,16 @@ class Canvas:
                 err += 4 * x + 6
             x += 1
 
-    def draw_square(self, start: Point, end: Point) -> None:
+    def draw_rectangle(self, start: Point, end: Point) -> None:
+        """Desenha um retângulo (ou quadrado) conectando 4 retas via Bresenham."""
         q2 = Point(start.x, end.y)
         q3 = Point(end.x, start.y)
         self.draw_line(start, q2)
         self.draw_line(start, q3)
         self.draw_line(end, q2)
         self.draw_line(end, q3)
+
+    draw_square = draw_rectangle
 
     # ------------------------------------------------------------------
     # Preenchimento
@@ -118,40 +121,36 @@ class Canvas:
         self._dfs(source, target)
 
     def _dfs(self, source: Point, target: Color) -> None:
-        """DFS com pilha explícita.
+        """DFS com pilha explícita sobre o buffer de pixels.
 
         A versão em Zig é recursiva; em Python isso estoura o limite de
         recursão (~1000 chamadas) logo numa área pequena, então usamos uma
         pilha. A ordem de visita (direita, esquerda, baixo, cima) é a mesma.
         """
-        # Atalhos locais: o laço roda uma vez por pixel, então evitar
-        # criar objetos Point e buscar atributos faz bastante diferença.
-        surface = self.surface
-        get_at = surface.get_at
-        set_at = surface.set_at
-        color = self.draw_color
-        w, h = surface.get_size()
+        buf = self.buffer
+        w = self.width
+        h = self.height
+        color_bytes = bytes(self.draw_color)
+        target_bytes = bytes(target)
 
         stack = [(source.x, source.y)]
-        surface.lock()  # evita travar/destravar a cada get_at/set_at
-        try:
-            while stack:
-                x, y = stack.pop()
-                if not (0 <= x < w and 0 <= y < h):
-                    continue
-                if tuple(get_at((x, y))) != target:
-                    continue
+        while stack:
+            x, y = stack.pop()
+            if not (0 <= x < w and 0 <= y < h):
+                continue
 
-                set_at((x, y), color)
+            idx = (y * w + x) * 4
+            if buf[idx : idx + 4] != target_bytes:
+                continue
 
-                # Empilhados ao contrário para que o primeiro a sair seja
-                # x + 1, igual à ordem das chamadas recursivas no original.
-                stack.append((x, y - 1))
-                stack.append((x, y + 1))
-                stack.append((x - 1, y))
-                stack.append((x + 1, y))
-        finally:
-            surface.unlock()
+            buf[idx : idx + 4] = color_bytes
+
+            # Empilhados ao contrário para que o primeiro a sair seja
+            # x + 1, igual à ordem das chamadas recursivas no original.
+            stack.append((x, y - 1))
+            stack.append((x, y + 1))
+            stack.append((x - 1, y))
+            stack.append((x + 1, y))
 
     # ------------------------------------------------------------------
     # Auxiliares
@@ -159,14 +158,15 @@ class Canvas:
     def plot_pixel(self, point: Point) -> None:
         if not self._in_bounds(point):
             return
-        self.surface.set_at((point.x, point.y), self.draw_color)
+        idx = (point.y * self.width + point.x) * 4
+        self.buffer[idx : idx + 4] = bytes(self.draw_color)
 
     def _read_pixel(self, point: Point) -> Color:
-        return tuple(self.surface.get_at((point.x, point.y)))  # type: ignore[return-value]
+        idx = (point.y * self.width + point.x) * 4
+        return (self.buffer[idx], self.buffer[idx + 1], self.buffer[idx + 2], self.buffer[idx + 3])
 
     def _in_bounds(self, point: Point) -> bool:
-        w, h = self.surface.get_size()
-        return 0 <= point.x < w and 0 <= point.y < h
+        return 0 <= point.x < self.width and 0 <= point.y < self.height
 
     def _plot_circle_octants(self, center: Point, x: int, y: int) -> None:
         offsets = (

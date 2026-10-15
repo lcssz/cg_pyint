@@ -2,7 +2,7 @@ from core import Core
 
 
 def main() -> None:
-    cc_core = Core(600, 600)
+    cc_core = Core(800, 600)
     try:
         cc_core.run()
     finally:
