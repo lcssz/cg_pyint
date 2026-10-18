@@ -66,9 +66,14 @@ class Canvas:
 
         err = dx + dy
         x, y = start.x, start.y
+        w, h = self.width, self.height
+        buf = self.buffer
+        color_bytes = bytes(self.draw_color)
 
         while True:
-            self.plot_pixel(Point(x, y))
+            if 0 <= x < w and 0 <= y < h:
+                idx = (y * w + x) * 4
+                buf[idx : idx + 4] = color_bytes
             if x == end.x and y == end.y:
                 break
 
@@ -96,6 +101,25 @@ class Canvas:
                 err += 4 * x + 6
             x += 1
 
+    def draw_filled_circle(self, center: Point, radius: int) -> None:
+        """Círculo preenchido usando o algoritmo do ponto médio com scanlines horizontais."""
+        x = 0
+        y = radius
+        err = 3 - 2 * radius
+
+        while x <= y:
+            self._draw_hline(center.x - x, center.x + x, center.y + y)
+            self._draw_hline(center.x - x, center.x + x, center.y - y)
+            self._draw_hline(center.x - y, center.x + y, center.y + x)
+            self._draw_hline(center.x - y, center.x + y, center.y - x)
+
+            if err > 0:
+                err += 4 * (x - y) + 10
+                y -= 1
+            else:
+                err += 4 * x + 6
+            x += 1
+
     def draw_rectangle(self, start: Point, end: Point) -> None:
         """Desenha um retângulo (ou quadrado) conectando 4 retas via Bresenham."""
         q2 = Point(start.x, end.y)
@@ -104,6 +128,26 @@ class Canvas:
         self.draw_line(start, q3)
         self.draw_line(end, q2)
         self.draw_line(end, q3)
+
+    def draw_filled_rectangle(self, start: Point, end: Point) -> None:
+        """Desenha um retângulo preenchido varrendo scanlines horizontais."""
+        y_min = max(0, min(start.y, end.y))
+        y_max = min(self.height - 1, max(start.y, end.y))
+        for y in range(y_min, y_max + 1):
+            self._draw_hline(start.x, end.x, y)
+
+    def _draw_hline(self, x0: int, x1: int, y: int) -> None:
+        if not (0 <= y < self.height):
+            return
+        if x0 > x1:
+            x0, x1 = x1, x0
+        x0 = max(0, x0)
+        x1 = min(self.width - 1, x1)
+        if x0 > x1:
+            return
+        span = x1 - x0 + 1
+        start_idx = (y * self.width + x0) * 4
+        self.buffer[start_idx : start_idx + span * 4] = bytes(self.draw_color) * span
 
     draw_square = draw_rectangle
 

@@ -16,9 +16,12 @@ python main.py
 | `1`       | Desenho livre (segure e arraste)          |
 | `2`       | Reta (clique, segure e arraste)           |
 | `3`       | Círculo (clique no centro, segure e arraste o raio) |
-| `4`       | Retângulo (clique, segure e arraste até o canto oposto) |
+| `4` / `r` | Retângulo (clique, segure e arraste até o canto oposto; `Shift` trava em quadrado) |
 | `g`       | Balde de tinta (flood fill)               |
+| `c`       | Limpar tela                               |
 | `q`/`Esc` | Sair                                      |
+
+Todas as ferramentas, seletor de cores e ações também estão disponíveis clicando nos botões da **Sidebar** lateral.
 
 ## Estrutura
 
@@ -28,11 +31,13 @@ python main.py
 | `src/core.zig`    | `core.py`    |
 | `src/canvas.zig`  | `canvas.py`  |
 | `src/shapes.zig`  | `shapes.py`  |
+| *(Novo)*          | `sidebar.py` |
 
 Os algoritmos de rasterização (Bresenham, ponto médio, flood fill) continuam
 implementados à mão sobre um framebuffer CPU em memória (`bytearray` RGBA).
-O GLFW e o OpenGL são utilizados apenas para abrir a janela, receber eventos
-de mouse/teclado e transferir o buffer para uma textura exibida na tela.
+A `Sidebar` é renderizada em um `glViewport` e sistema de projeção OpenGL
+separados ao lado do `Canvas`, garantindo isolamento total sem necessidade de
+algoritmos de clipping para proteger a interface.
 
 ## Diferenças em relação à versão Zig
 
