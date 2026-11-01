@@ -79,10 +79,10 @@ class Sidebar:
             (22, 163, 74, 255),    # Verde
             (37, 99, 235, 255),    # Azul
             (234, 179, 8, 255),    # Amarelo
-            (234, 88, 12, 255),    # Laranja
-            (147, 51, 234, 255),   # Roxo
+            (0, 255, 255, 255),    # Ciano
+            (255, 0, 255, 255),    # Magenta
         ]
-        y = 385
+        y = 310
         for i, c in enumerate(palette):
             col = i % 2
             row = i // 2
@@ -91,11 +91,14 @@ class Sidebar:
     def add_button(
         self,
         icon: str,
+        x: int,
         y: int,
         on_click: Callable[[], None],
         is_active: Callable[[], bool] | None = None,
+        w: int = 30,
+        h: int = 30,
     ) -> None:
-        self.buttons.append(Button(10, y, self.width - 20, 34, icon, on_click, is_active))
+        self.buttons.append(Button(x, y, w, h, icon, on_click, is_active))
 
     def handle_click(self, x: int, y: int) -> None:
         for btn in self.buttons:
@@ -186,6 +189,35 @@ class Sidebar:
         elif icon == "clear":
             self._rect(cx - 10, cy - 7, 20, 14, (255, 255, 255))
             self._outline(cx - 10, cy - 7, 20, 14, (20, 20, 20))
+        elif icon == "eraser":
+            self._rect(cx - 9, cy - 5, 18, 10, (240, 170, 170))
+            self._outline(cx - 9, cy - 5, 18, 10, (20, 20, 20))
+        elif icon == "triangle":
+            glBegin(GL_LINE_LOOP)
+            glVertex2f(cx, cy - 8)
+            glVertex2f(cx + 9, cy + 7)
+            glVertex2f(cx - 9, cy + 7)
+            glEnd()
+        elif icon == "filled_triangle":
+            glBegin(GL_POLYGON)
+            glVertex2f(cx, cy - 8)
+            glVertex2f(cx + 9, cy + 7)
+            glVertex2f(cx - 9, cy + 7)
+            glEnd()
+        elif icon == "select":
+            glBegin(GL_LINE_LOOP)
+            glVertex2f(cx - 5, cy - 8)
+            glVertex2f(cx - 5, cy + 7)
+            glVertex2f(cx - 1, cy + 3)
+            glVertex2f(cx + 5, cy + 3)
+            glEnd()
+        elif icon == "save":
+            self._outline(cx - 8, cy - 8, 16, 16, (20, 20, 20))
+            self._rect(cx - 4, cy - 8, 8, 5, (20, 20, 20))
+            self._rect(cx - 5, cy + 1, 10, 7, (20, 20, 20))
+        elif icon.startswith("thickness_"):
+            n = int(icon.split("_")[1])
+            self._rect(cx - 8, cy - n // 2, 16, n, (20, 20, 20))
         elif icon == "quit":
             glBegin(GL_LINES)
             glVertex2f(cx - 7, cy - 7)
