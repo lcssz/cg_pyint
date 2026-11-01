@@ -13,15 +13,31 @@ python main.py
 
 | Tecla     | Ação                                      |
 |-----------|-------------------------------------------|
-| `1`       | Desenho livre (segure e arraste)          |
+| `1`       | Lápis (desenho livre, segure e arraste)   |
+| `e`       | Borracha (pinta com a cor de fundo)       |
 | `2`       | Reta (clique, segure e arraste)           |
-| `3`       | Círculo (clique no centro, segure e arraste o raio) |
-| `4` / `r` | Retângulo (clique, segure e arraste até o canto oposto; `Shift` trava em quadrado) |
+| `3` / `5` | Círculo vazado / preenchido (centro e arraste o raio) |
+| `4` / `r` / `6` | Retângulo vazado / preenchido (`Shift` trava em quadrado) |
+| `7` / `8` | Triângulo vazado / preenchido (arraste a caixa que o contém) |
 | `g`       | Balde de tinta (flood fill)               |
+| `v`       | Selecionar forma (clique no contorno e arraste para mover) |
+| `F1`/`F2`/`F3` | Espessura fina (1 px) / média (3 px) / grossa (5 px) |
+| `s`       | Salvar o canvas como `paint_AAAAMMDD_HHMMSS.png` |
 | `c`       | Limpar tela                               |
 | `q`/`Esc` | Sair                                      |
 
-Todas as ferramentas, seletor de cores e ações também estão disponíveis clicando nos botões da **Sidebar** lateral.
+Com uma forma selecionada (`v`): `←`/`→` giram 15°, `↑`/`↓` aumentam/diminuem a
+escala, `Delete` apaga, e escolher outra cor ou espessura altera a forma.
+
+Todas as ferramentas, seletor de cores (8 cores), espessuras e ações também estão
+disponíveis clicando nos botões da **Sidebar** lateral.
+
+## Formas editáveis
+
+Retas, círculos, retângulos e triângulos viram objetos (`shapes.py`) guardados em
+uma lista, redesenhados sobre a camada raster a cada alteração, o que permite mover,
+girar e escalar. Elas deixam de ser editáveis (são gravadas no raster) quando você usa
+lápis, borracha, balde ou limpa a tela.
 
 ## Estrutura
 
@@ -32,6 +48,9 @@ Todas as ferramentas, seletor de cores e ações também estão disponíveis cli
 | `src/canvas.zig`  | `canvas.py`  |
 | `src/shapes.zig`  | `shapes.py`  |
 | *(Novo)*          | `sidebar.py` |
+
+`shapes.py` contém `Line`, `Polygon` e `Circle`, com translação, rotação e escala.
+`Canvas` expõe `put_pixel(x, y, cor)` e `get_pixel(x, y)`, base de todas as primitivas.
 
 Os algoritmos de rasterização (Bresenham, ponto médio, flood fill) continuam
 implementados à mão sobre um framebuffer CPU em memória (`bytearray` RGBA).

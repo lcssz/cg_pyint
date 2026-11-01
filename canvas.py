@@ -7,6 +7,8 @@ ponto médio para círculos, flood fill) são implementados à mão; o buffer
 
 from __future__ import annotations
 
+import struct
+import zlib
 from dataclasses import dataclass
 
 
@@ -28,11 +30,33 @@ class Canvas:
         self.height = height
         self.buffer = bytearray(width * height * 4)
         self.draw_color: Color = (0, 0, 0, 255)
+        self.background: Color = (255, 255, 255, 255)
+        self.thickness = 1
+        self.eraser = False
         self.is_drawing = False
         self.last_point: Point | None = None
 
     def clear(self, color: Color) -> None:
         self.buffer[:] = bytes(color) * (self.width * self.height)
+
+    def save_png(self, path: str) -> None:
+        """Exporta o buffer como PNG RGBA (só struct + zlib da stdlib)."""
+        stride = self.width * 4
+        raw = b"".join(
+            b"\x00" + bytes(self.buffer[y * stride : (y + 1) * stride])
+            for y in range(self.height)
+        )
+
+        def chunk(tag: bytes, data: bytes) -> bytes:
+            body = tag + data
+            return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body))
+
+        header = struct.pack(">IIBBBBB", self.width, self.height, 8, 6, 0, 0, 0)
+        with open(path, "wb") as f:
+            f.write(b"\x89PNG\r\n\x1a\n")
+            f.write(chunk(b"IHDR", header))
+            f.write(chunk(b"IDAT", zlib.compress(raw)))
+            f.write(chunk(b"IEND", b""))
 
     # ------------------------------------------------------------------
     # Traço livre (modo FREE)
@@ -66,14 +90,9 @@ class Canvas:
 
         err = dx + dy
         x, y = start.x, start.y
-        w, h = self.width, self.height
-        buf = self.buffer
-        color_bytes = bytes(self.draw_color)
 
         while True:
-            if 0 <= x < w and 0 <= y < h:
-                idx = (y * w + x) * 4
-                buf[idx : idx + 4] = color_bytes
+            self.plot_pixel(Point(x, y))
             if x == end.x and y == end.y:
                 break
 
@@ -120,21 +139,26 @@ class Canvas:
                 err += 4 * x + 6
             x += 1
 
-    def draw_rectangle(self, start: Point, end: Point) -> None:
-        """Desenha um retângulo (ou quadrado) conectando 4 retas via Bresenham."""
-        q2 = Point(start.x, end.y)
-        q3 = Point(end.x, start.y)
-        self.draw_line(start, q2)
-        self.draw_line(start, q3)
-        self.draw_line(end, q2)
-        self.draw_line(end, q3)
+    def draw_polygon(self, points: list[Point]) -> None:
+        """Polígono fechado: uma reta de Bresenham entre vértices consecutivos."""
+        for i, p in enumerate(points):
+            self.draw_line(p, points[(i + 1) % len(points)])
 
-    def draw_filled_rectangle(self, start: Point, end: Point) -> None:
-        """Desenha um retângulo preenchido varrendo scanlines horizontais."""
-        y_min = max(0, min(start.y, end.y))
-        y_max = min(self.height - 1, max(start.y, end.y))
+    def draw_filled_polygon(self, points: list[Point]) -> None:
+        """Preenchimento por scanline (par-ímpar) + contorno para cobrir as bordas."""
+        n = len(points)
+        y_min = max(0, min(p.y for p in points))
+        y_max = min(self.height - 1, max(p.y for p in points))
         for y in range(y_min, y_max + 1):
-            self._draw_hline(start.x, end.x, y)
+            xs = []
+            for i, a in enumerate(points):
+                b = points[(i + 1) % n]
+                if a.y != b.y and min(a.y, b.y) <= y < max(a.y, b.y):
+                    xs.append(a.x + (y - a.y) * (b.x - a.x) / (b.y - a.y))
+            xs.sort()
+            for x0, x1 in zip(xs[::2], xs[1::2]):
+                self._draw_hline(round(x0), round(x1), y)
+        self.draw_polygon(points)
 
     def _draw_hline(self, x0: int, x1: int, y: int) -> None:
         if not (0 <= y < self.height):
@@ -149,8 +173,6 @@ class Canvas:
         start_idx = (y * self.width + x0) * 4
         self.buffer[start_idx : start_idx + span * 4] = bytes(self.draw_color) * span
 
-    draw_square = draw_rectangle
-
     # ------------------------------------------------------------------
     # Preenchimento
     # ------------------------------------------------------------------
@@ -158,7 +180,7 @@ class Canvas:
         if not self._in_bounds(source):
             return
 
-        target = self._read_pixel(source)
+        target = self.get_pixel(source.x, source.y)
         if target == self.draw_color:
             return
 
@@ -199,15 +221,24 @@ class Canvas:
     # ------------------------------------------------------------------
     # Auxiliares
     # ------------------------------------------------------------------
-    def plot_pixel(self, point: Point) -> None:
-        if not self._in_bounds(point):
+    def put_pixel(self, x: int, y: int, color: Color) -> None:
+        if not (0 <= x < self.width and 0 <= y < self.height):
             return
-        idx = (point.y * self.width + point.x) * 4
-        self.buffer[idx : idx + 4] = bytes(self.draw_color)
+        idx = (y * self.width + x) * 4
+        self.buffer[idx : idx + 4] = bytes(color)
 
-    def _read_pixel(self, point: Point) -> Color:
-        idx = (point.y * self.width + point.x) * 4
+    def get_pixel(self, x: int, y: int) -> Color:
+        """Lê um pixel; o chamador garante que (x, y) está dentro do canvas."""
+        idx = (y * self.width + x) * 4
         return (self.buffer[idx], self.buffer[idx + 1], self.buffer[idx + 2], self.buffer[idx + 3])
+
+    def plot_pixel(self, point: Point) -> None:
+        """Carimba o pincel (quadrado de `thickness` pixels) centrado no ponto."""
+        r = self.thickness // 2
+        color = self.background if self.eraser else self.draw_color
+        for dy in range(-r, r + 1):
+            for dx in range(-r, r + 1):
+                self.put_pixel(point.x + dx, point.y + dy, color)
 
     def _in_bounds(self, point: Point) -> bool:
         return 0 <= point.x < self.width and 0 <= point.y < self.height
